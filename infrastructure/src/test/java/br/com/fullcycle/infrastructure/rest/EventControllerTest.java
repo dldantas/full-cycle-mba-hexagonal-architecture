@@ -109,4 +109,117 @@ class EventControllerTest {
         var actualEvent = eventRepository.eventOfId(EventId.with(eventId)).get();
         Assertions.assertEquals(1, actualEvent.allTickets().size());
     }
+
+    @Test
+    @DisplayName("Deve cancelar um evento")
+    public void testCancel() throws Exception {
+        final var eventId = createEvent();
+
+        this.mvc.perform(MockMvcRequestBuilders.post("/events/{id}/cancel", eventId))
+                .andExpect(MockMvcResultMatchers.status().isOk())
+                .andExpect(MockMvcResultMatchers.jsonPath("$.id").value(eventId))
+                .andExpect(MockMvcResultMatchers.jsonPath("$.status").value("CANCELLED"));
+
+        var actualEvent = eventRepository.eventOfId(EventId.with(eventId)).get();
+        Assertions.assertTrue(actualEvent.isCancelled());
+    }
+
+    @Test
+    @DisplayName("Não deve cancelar um evento já cancelado")
+    public void testCancelTwice() throws Exception {
+        final var eventId = createEvent();
+
+        this.mvc.perform(MockMvcRequestBuilders.post("/events/{id}/cancel", eventId))
+                .andExpect(MockMvcResultMatchers.status().isOk());
+
+        this.mvc.perform(MockMvcRequestBuilders.post("/events/{id}/cancel", eventId))
+                .andExpect(MockMvcResultMatchers.status().isUnprocessableEntity())
+                .andExpect(MockMvcResultMatchers.content().string("Event already cancelled"));
+    }
+
+    @Test
+    @DisplayName("Não deve cancelar um evento inexistente")
+    public void testCancelNotFound() throws Exception {
+        this.mvc.perform(MockMvcRequestBuilders.post("/events/{id}/cancel", EventId.unique().value()))
+                .andExpect(MockMvcResultMatchers.status().isUnprocessableEntity())
+                .andExpect(MockMvcResultMatchers.content().string("Event not found"));
+    }
+
+    @Test
+    @DisplayName("Não deve inscrever um cliente em um evento cancelado")
+    public void testSubscribeCancelledEvent() throws Exception {
+        final var eventId = createEvent();
+
+        this.mvc.perform(MockMvcRequestBuilders.post("/events/{id}/cancel", eventId))
+                .andExpect(MockMvcResultMatchers.status().isOk());
+
+        var sub = new SubscribeDTO(johnDoe.customerId().value(), null);
+
+        this.mvc.perform(
+                        MockMvcRequestBuilders.post("/events/{id}/subscribe", eventId)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(mapper.writeValueAsString(sub))
+                )
+                .andExpect(MockMvcResultMatchers.status().isUnprocessableEntity())
+                .andExpect(MockMvcResultMatchers.content().string("Event is cancelled"));
+    }
+
+    @Test
+    @DisplayName("Deve obter um evento por id (representação completa)")
+    public void testGet() throws Exception {
+        final var eventId = createEvent();
+
+        this.mvc.perform(MockMvcRequestBuilders.get("/events/{id}", eventId))
+                .andExpect(MockMvcResultMatchers.status().isOk())
+                .andExpect(MockMvcResultMatchers.jsonPath("$.id").value(eventId))
+                .andExpect(MockMvcResultMatchers.jsonPath("$.name").value("Disney on Ice"))
+                .andExpect(MockMvcResultMatchers.jsonPath("$.date").value("2021-01-01"))
+                .andExpect(MockMvcResultMatchers.jsonPath("$.totalSpots").value(100))
+                .andExpect(MockMvcResultMatchers.jsonPath("$.status").value("ACTIVE"));
+    }
+
+    @Test
+    @DisplayName("Deve obter um evento cancelado por id (representação pública)")
+    public void testGetPublic() throws Exception {
+        final var eventId = createEvent();
+
+        this.mvc.perform(MockMvcRequestBuilders.post("/events/{id}/cancel", eventId))
+                .andExpect(MockMvcResultMatchers.status().isOk());
+
+        this.mvc.perform(MockMvcRequestBuilders.get("/events/{id}", eventId).header("X-Public", "true"))
+                .andExpect(MockMvcResultMatchers.status().isOk())
+                .andExpect(MockMvcResultMatchers.jsonPath("$.id").value(eventId))
+                .andExpect(MockMvcResultMatchers.jsonPath("$.status").value("CANCELLED"))
+                .andExpect(MockMvcResultMatchers.jsonPath("$.name").doesNotExist())
+                .andExpect(MockMvcResultMatchers.jsonPath("$.date").doesNotExist())
+                .andExpect(MockMvcResultMatchers.jsonPath("$.totalSpots").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("Deve responder 404 para evento inexistente nas duas representações")
+    public void testGetNotFound() throws Exception {
+        final var eventId = EventId.unique().value();
+
+        this.mvc.perform(MockMvcRequestBuilders.get("/events/{id}", eventId))
+                .andExpect(MockMvcResultMatchers.status().isNotFound())
+                .andExpect(MockMvcResultMatchers.content().string(""));
+
+        this.mvc.perform(MockMvcRequestBuilders.get("/events/{id}", eventId).header("X-Public", "true"))
+                .andExpect(MockMvcResultMatchers.status().isNotFound())
+                .andExpect(MockMvcResultMatchers.content().string(""));
+    }
+
+    private String createEvent() throws Exception {
+        var event = new NewEventDTO("Disney on Ice", "2021-01-01", 100, disney.partnerId().value());
+
+        final var createResult = this.mvc.perform(
+                        MockMvcRequestBuilders.post("/events")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(mapper.writeValueAsString(event))
+                )
+                .andExpect(MockMvcResultMatchers.status().isCreated())
+                .andReturn().getResponse().getContentAsByteArray();
+
+        return mapper.readValue(createResult, CreateEventUseCase.Output.class).id();
+    }
 }

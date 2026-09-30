@@ -4,8 +4,9 @@ plugins {
 }
 
 java {
-    targetCompatibility = JavaVersion.VERSION_17
-    sourceCompatibility = JavaVersion.VERSION_17
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(17))
+    }
 }
 
 repositories {
@@ -18,7 +19,7 @@ dependencies {
 }
 
 jacoco {
-    toolVersion = "0.8.9"
+    toolVersion = "0.8.12"
 }
 
 tasks.test {

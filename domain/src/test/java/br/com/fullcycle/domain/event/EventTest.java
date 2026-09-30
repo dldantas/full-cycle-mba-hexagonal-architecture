@@ -34,6 +34,102 @@ public class EventTest {
         Assertions.assertEquals(expectedTotalSpots, actualEvent.totalSpots());
         Assertions.assertEquals(expectedPartnerId, actualEvent.partnerId().value());
         Assertions.assertEquals(expectedTickets, actualEvent.allTickets().size());
+        Assertions.assertEquals(EventStatus.ACTIVE, actualEvent.status());
+        Assertions.assertFalse(actualEvent.isCancelled());
+    }
+
+    @Test
+    @DisplayName("Deve cancelar um evento ativo e registrar o evento de domínio EventCancelled")
+    public void testCancelEvent() throws Exception {
+        // given
+        final var aPartner =
+                Partner.newPartner("John Doe", "41.536.538/0001-00", "john.doe@gmail.com");
+
+        final var actualEvent = Event.newEvent("Disney on Ice", "2021-01-01", 10, aPartner);
+
+        final var expectedStatus = EventStatus.CANCELLED;
+        final var expectedDomainEvent = "event.cancelled";
+        final var expectedDomainEvents = 1;
+        final var expectedEventId = actualEvent.eventId().value();
+
+        // when
+        actualEvent.cancel();
+
+        // then
+        Assertions.assertEquals(expectedStatus, actualEvent.status());
+        Assertions.assertTrue(actualEvent.isCancelled());
+        Assertions.assertEquals(expectedDomainEvents, actualEvent.allDomainEvents().size());
+
+        final var actualDomainEvent = actualEvent.allDomainEvents().iterator().next();
+        Assertions.assertInstanceOf(EventCancelled.class, actualDomainEvent);
+        Assertions.assertEquals(expectedDomainEvent, actualDomainEvent.type());
+        Assertions.assertEquals(expectedEventId, ((EventCancelled) actualDomainEvent).eventId());
+        Assertions.assertNotNull(actualDomainEvent.domainEventId());
+        Assertions.assertNotNull(actualDomainEvent.occurredOn());
+    }
+
+    @Test
+    @DisplayName("Não deve cancelar um evento já cancelado")
+    public void testCancelEventTwice() throws Exception {
+        // given
+        final var aPartner =
+                Partner.newPartner("John Doe", "41.536.538/0001-00", "john.doe@gmail.com");
+
+        final var actualEvent = Event.newEvent("Disney on Ice", "2021-01-01", 10, aPartner);
+        actualEvent.cancel();
+
+        final var expectedError = "Event already cancelled";
+        final var expectedDomainEvents = 1;
+
+        // when
+        final var actualError = Assertions.assertThrows(ValidationException.class, actualEvent::cancel);
+
+        // then
+        Assertions.assertEquals(expectedError, actualError.getMessage());
+        Assertions.assertEquals(expectedDomainEvents, actualEvent.allDomainEvents().size());
+    }
+
+    @Test
+    @DisplayName("Não deve reservar um ticket em um evento cancelado")
+    public void testReserveTicketWhenEventIsCancelled() throws Exception {
+        // given
+        final var aPartner =
+                Partner.newPartner("John Doe", "41.536.538/0001-00", "john.doe@gmail.com");
+
+        final var aCustomer =
+                Customer.newCustomer("John Doe", "123.456.789-01", "john.doe@gmail.com");
+
+        final var actualEvent = Event.newEvent("Disney on Ice", "2021-01-01", 10, aPartner);
+        actualEvent.cancel();
+
+        final var expectedError = "Event is cancelled";
+        final var expectedTickets = 0;
+
+        // when
+        final var actualError = Assertions.assertThrows(
+                ValidationException.class,
+                () -> actualEvent.reserveTicket(aCustomer.customerId())
+        );
+
+        // then
+        Assertions.assertEquals(expectedError, actualError.getMessage());
+        Assertions.assertEquals(expectedTickets, actualEvent.allTickets().size());
+    }
+
+    @Test
+    @DisplayName("Deve restaurar um evento cancelado")
+    public void testRestoreCancelledEvent() throws Exception {
+        // given
+        final var expectedId = EventId.unique().value();
+        final var expectedPartnerId = "0c6d1b5e-7b1f-4a36-8f6b-0f7bd2b3a111";
+
+        // when
+        final var actualEvent = Event.restore(expectedId, "Disney on Ice", "2021-01-01", 10, expectedPartnerId, EventStatus.CANCELLED, null);
+
+        // then
+        Assertions.assertEquals(expectedId, actualEvent.eventId().value());
+        Assertions.assertTrue(actualEvent.isCancelled());
+        Assertions.assertTrue(actualEvent.allDomainEvents().isEmpty());
     }
 
     @Test
